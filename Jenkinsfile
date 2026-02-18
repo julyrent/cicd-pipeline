@@ -4,11 +4,10 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
-    ansiColor('xterm')
   }
 
   environment {
-    DOCKERHUB_USER = "dockerhub-credentials"
+    DOCKERHUB_USER = "gigagabunia"
     IMAGE_NAME     = "cicd-pipeline-app"
     DOCKER_REGISTRY_URL = "https://index.docker.io/v1/"
     DOCKER_CREDS_ID     = "dockerhub-credentials"
