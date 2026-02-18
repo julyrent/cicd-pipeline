@@ -55,7 +55,7 @@ pipeline {
             set -euxo pipefail
             node -v
             npm -v
-            npm ci
+            npm install
             npm run build
           '''
         }
@@ -96,14 +96,14 @@ pipeline {
   }
 
   post {
-    always {
-      sh '''
-        echo "CICD finished for branch=${BRANCH_NAME}"
-        docker images | head -n 25 || true
-      '''
-    }
-    cleanup {
-      cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+  always {
+    sh '''
+      echo "CICD finished for branch=${BRANCH_NAME}"
+      docker images | head -n 25 || true
+    '''
+  }
+  cleanup {
+    cleanWs(deleteDirs: true, disableDeferredWipeout: true)
     }
   }
 }
