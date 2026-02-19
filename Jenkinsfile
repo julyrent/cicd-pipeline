@@ -7,10 +7,6 @@ pipeline {
   }
 
   environment {
-    DOCKERHUB_USER = "gigagabunia"
-    IMAGE_NAME     = "cicd-pipeline-app"
-    DOCKER_REGISTRY_URL = "https://index.docker.io/v1/"
-    DOCKER_CREDS_ID     = "dockerhub-credentials"
     NODE_TOOL = "node18"
   }
 
@@ -18,8 +14,7 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
-        sh 'git rev-parse --short HEAD > .git_commit'
-        sh 'echo "Branch: ${BRANCH_NAME} | Commit: $(cat .git_commit)"'
+        echo "Branch: ${env.BRANCH_NAME}"
       }
     }
 
@@ -27,23 +22,22 @@ pipeline {
       steps {
         script {
           if (env.BRANCH_NAME == 'main') {
-            env.DEPLOY_PORT = '3000'
+            env.IMAGE_NAME = 'nodemain:v1.0'
+            env.HOST_PORT  = '3000'
+            env.CTR_PORT   = '3000'
+            env.CONTAINER_NAME = 'nodemain'
           } else if (env.BRANCH_NAME == 'dev') {
-            env.DEPLOY_PORT = '3001'
+            env.IMAGE_NAME = 'nodedev:v1.0'
+            env.HOST_PORT  = '3001'
+            env.CTR_PORT   = '3000'
+            env.CONTAINER_NAME = 'nodedev'
           } else {
-            env.DEPLOY_PORT = '0'
+            error("Unsupported branch: ${env.BRANCH_NAME}. Only main/dev allowed.")
           }
 
-          env.GIT_SHA = readFile('.git_commit').trim()
-          env.IMAGE_TAG   = "${env.BRANCH_NAME}-${env.GIT_SHA}"
-          env.LATEST_TAG  = "${env.BRANCH_NAME}-latest"
-
-          env.FULL_IMAGE   = "${env.DOCKERHUB_USER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
-          env.LATEST_IMAGE = "${env.DOCKERHUB_USER}/${env.IMAGE_NAME}:${env.LATEST_TAG}"
-
-          echo "BRANCH=${env.BRANCH_NAME}"
-          echo "PORT=${env.DEPLOY_PORT}"
-          echo "IMAGE=${env.FULL_IMAGE}"
+          echo "IMAGE=${env.IMAGE_NAME}"
+          echo "PORT_MAP=${env.HOST_PORT}:${env.CTR_PORT}"
+          echo "CONTAINER=${env.CONTAINER_NAME}"
         }
       }
     }
@@ -56,7 +50,6 @@ pipeline {
             node -v
             npm -v
             npm install
-            npm run build
           '''
         }
       }
@@ -67,7 +60,7 @@ pipeline {
         nodejs(nodeJSInstallationName: "${env.NODE_TOOL}") {
           sh '''
             set -euxo pipefail
-            npm test -- --watchAll=false
+            npm test
           '''
         }
       }
@@ -75,34 +68,32 @@ pipeline {
 
     stage('Build Docker Image') {
       steps {
-        script {
-          env.DOCKER_BUILD_ARGS = "--build-arg BRANCH_NAME=${env.BRANCH_NAME} --build-arg PORT=${env.DEPLOY_PORT} ."
-          docker.build("${env.FULL_IMAGE}", "${env.DOCKER_BUILD_ARGS}")
-          sh "docker tag ${env.FULL_IMAGE} ${env.LATEST_IMAGE}"
-        }
+        sh '''
+          set -euxo pipefail
+          docker build -t "$IMAGE_NAME" .
+        '''
       }
     }
 
-    stage('Push') {
+    stage('Deploy') {
       steps {
-        script {
-          docker.withRegistry("${env.DOCKER_REGISTRY_URL}", "${env.DOCKER_CREDS_ID}") {
-            docker.image("${env.FULL_IMAGE}").push()
-            docker.image("${env.LATEST_IMAGE}").push()
-          }
-        }
+        sh '''
+          set -euxo pipefail
+          docker rm -f "$CONTAINER_NAME" || true
+          docker run -d --name "$CONTAINER_NAME" \
+            --expose "$HOST_PORT" \
+            -p "$HOST_PORT":"$CTR_PORT" \
+            "$IMAGE_NAME"
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
+          echo "App should be on: http://localhost:$HOST_PORT"
+        '''
       }
     }
   }
 
   post {
-  always {
-    sh '''
-      docker images | head -n 25 || true
-    '''
-  }
-  cleanup {
-    cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+    always {
+      sh 'docker ps -a || true'
     }
   }
 }
