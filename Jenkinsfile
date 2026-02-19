@@ -98,7 +98,6 @@ pipeline {
   post {
   always {
     sh '''
-      echo "CICD finished for branch=${BRANCH_NAME}"
       docker images | head -n 25 || true
     '''
   }
